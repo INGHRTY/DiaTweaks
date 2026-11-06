@@ -1,37 +1,65 @@
 #import "StdPatch/StdPatch.h"
-#include <libproc.h>
-#include <signal.h>
-#include <sys/sysctl.h>
+#import <AppKit/AppKit.h>
+#import <libproc.h>
+#import <signal.h>
+#import <sys/sysctl.h>
+#import "Patches/OwnModel/OwnModel.h"
 
 extern DPPatch DPOwnModel;
+
+NSString *const DPOwnModelEndpointKey = @"ownModelEndpoint";
+NSString *const DPOwnModelModelKey = @"ownModelModel";
+NSString *const DPOwnModelEffortKey = @"ownModelEffort";
+NSString *const DPOwnModelTokenKey = @"ownModelToken";
 
 // Dia answers with the Claude Code it ships, running in a sandbox whose only network way out is a local gateway to
 // Dia's own servers. This patch points that agent at an Anthropic-compatible endpoint of yours instead: the same
 // Claude Code, the same tools, your model.
 //
-// To change the endpoint or model, set ownModelEndpoint and ownModelModel in com.diapatches, such as:
-//   defaults write com.diapatches ownModelEndpoint http://127.0.0.1:3425
-//   defaults write com.diapatches ownModelModel 'auto/deepseek-v4.1-flash[1m]'
-static NSString *DPOwnModelEndpoint(void) {
-    NSString *value = [[[NSUserDefaults alloc] initWithSuiteName:@"com.diapatches"] stringForKey:@"ownModelEndpoint"];
-    return value.length ? value : @"http://127.0.0.1:3425";
+// The endpoint, model, effort and token live in com.diapatches and are read per request, so a change in Settings
+// applies to the next message.
+static NSUserDefaults *DPOwnModelDefaults(void) {
+    static NSUserDefaults *defaults;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ defaults = [[NSUserDefaults alloc] initWithSuiteName:@"com.diapatches"]; });
+    return defaults;
 }
 
-static NSString *DPOwnModelName(void) {
-    NSString *value = [[[NSUserDefaults alloc] initWithSuiteName:@"com.diapatches"] stringForKey:@"ownModelModel"];
-    return value.length ? value : @"auto/deepseek-v4.1-flash[1m]";
+static NSString *DPOwnModelValue(NSString *key, NSString *fallback) {
+    id value = [DPOwnModelDefaults() objectForKey:key];
+    if ([value isKindOfClass:NSString.class] && [value length]) return value;
+    return fallback;
 }
 
-static NSString *DPOwnModelProfilePath(void) {
-    return DPAppSupport(@"DiaPatches/own-model.sb");
+NSString *DPOwnModelEndpoint(void) {
+    return DPOwnModelValue(DPOwnModelEndpointKey, @"http://127.0.0.1:3425");
+}
+
+NSString *DPOwnModelModel(void) {
+    return DPOwnModelValue(DPOwnModelModelKey, @"auto/deepseek-v4.1-flash[1m]");
+}
+
+NSString *DPOwnModelEffort(void) { return DPOwnModelValue(DPOwnModelEffortKey, nil); }
+
+NSString *DPOwnModelToken(void) { return DPOwnModelValue(DPOwnModelTokenKey, nil); }
+
+// Claude Code talks to the relay, which can change what Dia's agent specs pin down; without it, it talks to the
+// endpoint itself and only the address changes.
+static NSString *DPOwnModelBase(void) {
+    uint16_t port = DPRelayStart();
+    return port ? [NSString stringWithFormat:@"http://127.0.0.1:%u", port] : DPOwnModelEndpoint();
 }
 
 // The port on localhost to let the sandbox reach, or nil when the endpoint is somewhere else.
 static NSString *DPOwnModelPort(void) {
-    NSURLComponents *parts = [NSURLComponents componentsWithString:DPOwnModelEndpoint()];
+    NSURLComponents *parts = [NSURLComponents componentsWithString:DPOwnModelBase()];
     NSString *host = parts.host.lowercaseString;
     if (![host isEqualToString:@"localhost"] && ![host isEqualToString:@"127.0.0.1"] && ![host isEqualToString:@"::1"]) return nil;
     return parts.port.stringValue ?: ([parts.scheme.lowercaseString isEqualToString:@"https"] ? @"443" : @"80");
+}
+
+static NSString *DPOwnModelProfilePath(void) {
+    return DPAppSupport(@"DiaPatches/own-model.sb");
 }
 
 // Dia hands Claude Code the sandbox profile it ships. This keeps that profile and adds the endpoint's port, since
@@ -55,20 +83,16 @@ static BOOL DPIsAgentServer(const char *path) {
     return path && strstr(path, "/agent-server-resources/dist/agent-server") != NULL;
 }
 
-// Dia starts the agent server from its own environment, so the endpoint, the model and the sandbox profile go on the
-// spawn. Everything below it inherits them.
+// Dia starts the agent server from its own environment, so the endpoint and the sandbox profile go on the spawn.
+// Everything below it inherits them.
 static void DPOwnModelSpawn(DPSpawn *spawn) {
     if (!DPOwnModel.on || !DPIsAgentServer(spawn->path)) return;
     NSString *profile = DPOwnModelProfilePath();
     if (![NSFileManager.defaultManager fileExistsAtPath:profile] && !DPWriteOwnModelProfile()) return;
-    NSString *model = DPOwnModelName();
+    NSString *base = DPOwnModelBase();
     spawn->env = DPEnvBySetting(spawn->env, @{
         @"CLAUDE_CODE_USE_VERTEX": @"0",
-        @"ANTHROPIC_BASE_URL": DPOwnModelEndpoint(),
-        @"ANTHROPIC_MODEL": model,
-        @"ANTHROPIC_DEFAULT_OPUS_MODEL": model,
-        @"ANTHROPIC_DEFAULT_SONNET_MODEL": model,
-        @"ANTHROPIC_DEFAULT_HAIKU_MODEL": model,
+        @"ANTHROPIC_BASE_URL": base,
         @"CLAUDE_CODE_SANDBOX_PROFILE": profile,
     });
 }
@@ -107,8 +131,8 @@ static NSDictionary<NSString *, NSString *> *DPProcessEnvironment(pid_t pid) {
     return env;
 }
 
-// The agent server reads its environment once, at launch, so a change needs it to start again. Dia starts another one
-// the next time a chat needs it.
+// The agent server reads its environment once, at launch, so a change to these needs it to start again. Dia starts
+// another one the next time a chat needs it.
 static void DPRestartAgentServer(void) {
     pid_t pid = DPAgentServerPID();
     if (pid) kill(pid, SIGTERM);
@@ -124,12 +148,13 @@ static void DPApplyOwnModel(DPPatch *patch) {
 static NSString *DPVerifyOwnModel(DPPatch *patch) {
     pid_t pid = DPAgentServerPID();
     if (!pid) return nil;
-    BOOL ours = [DPProcessEnvironment(pid)[@"ANTHROPIC_BASE_URL"] isEqualToString:DPOwnModelEndpoint()];
+    BOOL ours = [DPProcessEnvironment(pid)[@"ANTHROPIC_BASE_URL"] isEqualToString:DPOwnModelBase()];
     if (ours == patch->on) return nil;
     return patch->on ? @"the agent server still answers with Dia's models" : @"the agent server still answers with your model";
 }
 
 static void DPInstallOwnModel(void) {
+    DPRelayStart();
     DPWriteOwnModelProfile();
     DPOnSpawn(DPOwnModelSpawn);
 }
@@ -138,10 +163,11 @@ DP_PATCH(DPOwnModel) {
     .key = @"ownModel",
     .order = 60,
     .title = @"Answer with Your Own Model",
-    .detail = @"Dia answers with the Claude Code it ships. Point that at your own Anthropic-compatible model endpoint instead of Dia's servers. Dia starts a new agent the next time you chat.",
+    .detail = @"Dia answers with the Claude Code it ships. Point that at your own Anthropic-compatible endpoint instead of Dia's servers, and pick the model and how hard it thinks.",
     .symbol = @"brain.head.profile",
     .tint = @"systemPurpleColor",
     .section = @"Other",
+    .rows = DPOwnModelRows,
     .install = DPInstallOwnModel,
     .apply = DPApplyOwnModel,
     .verify = DPVerifyOwnModel,
