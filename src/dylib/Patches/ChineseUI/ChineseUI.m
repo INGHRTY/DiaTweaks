@@ -22,6 +22,17 @@ static NSString *DPUntranslated(NSString *text) {
     return text;
 }
 
+#pragma mark - Chromium's own interface
+
+// Chromium picks its interface language from the main bundle's preferred localizations, and Dia's
+// bundle lists only English, so chrome:// pages, page context menus and Chromium's dialogs stay
+// English. Advertising a Chinese localization makes it load its bundled zh_CN resources. Chromium
+// decides once at launch, so turning the patch off takes effect the next time Dia starts.
+static NSArray<NSString *> *DPPreferredLocalizations(NSBundle *self, SEL _cmd) {
+    if (DPChineseUI.on && self == NSBundle.mainBundle) return @[ @"zh-Hans" ];
+    return DPCallOriginal(DPPreferredLocalizations, self);
+}
+
 #pragma mark - AppKit
 
 static void DPTextField_setStringValue(NSTextField *self, SEL _cmd, NSString *value) {
@@ -42,6 +53,14 @@ static void DPTextFieldCell_setStringValue(NSTextFieldCell *self, SEL _cmd, NSSt
 
 static void DPButton_setTitle(NSButton *self, SEL _cmd, NSString *title) {
     DPCallOriginal(DPButton_setTitle, self, DPTranslated(title));
+}
+
+static void DPView_setToolTip(NSView *self, SEL _cmd, NSString *toolTip) {
+    DPCallOriginal(DPView_setToolTip, self, DPTranslated(toolTip));
+}
+
+static void DPWindow_setTitle(NSWindow *self, SEL _cmd, NSString *title) {
+    DPCallOriginal(DPWindow_setTitle, self, DPTranslated(title));
 }
 
 static void DPMenuItem_setTitle(NSMenuItem *self, SEL _cmd, NSString *title) {
@@ -119,10 +138,13 @@ static void DPDumpMenus(void) {
 }
 
 static void DPInstallChineseUI(void) {
+    DPHook("NSBundle", @selector(preferredLocalizations), (IMP)DPPreferredLocalizations);
     DPHook("NSTextField", @selector(setStringValue:), (IMP)DPTextField_setStringValue);
     DPHook("NSTextField", @selector(setAttributedStringValue:), (IMP)DPTextField_setAttributedStringValue);
     DPHook("NSTextFieldCell", @selector(setStringValue:), (IMP)DPTextFieldCell_setStringValue);
     DPHook("NSButton", @selector(setTitle:), (IMP)DPButton_setTitle);
+    DPHook("NSView", @selector(setToolTip:), (IMP)DPView_setToolTip);
+    DPHook("NSWindow", @selector(setTitle:), (IMP)DPWindow_setTitle);
     DPHook("NSMenuItem", @selector(setTitle:), (IMP)DPMenuItem_setTitle);
     DPHook("NSMenuItem", @selector(initWithTitle:action:keyEquivalent:), (IMP)DPMenuItem_initWithTitle);
     DPHook("NSTabViewItem", @selector(setLabel:), (IMP)DPTabViewItem_setLabel);
@@ -141,7 +163,7 @@ DP_PATCH(DPChineseUI) {
     .key = @"chineseUI",
     .defaultOn = YES,
     .title = @"Chinese Interface",
-    .detail = @"Translate Dia's interface into Chinese. The command bar, web pages and text fields are left alone.",
+    .detail = @"Translate Dia and its browser interface into Chinese. The command bar, web pages and text fields are left alone; Chromium's own pages switch after Dia restarts.",
     .symbol = @"character.bubble.fill",
     .tint = @"systemBlueColor",
     .section = @"Language",
