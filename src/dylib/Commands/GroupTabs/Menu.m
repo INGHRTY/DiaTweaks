@@ -19,7 +19,7 @@ static BOOL DPHasFollower(NSMenu *menu) {
 }
 
 static BOOL DPIsNewGroupTitle(NSString *title) {
-    if ([title isEqualToString:@"New Group with Tab"] || [title isEqualToString:@"New Group with Tabs"]) return YES;
+    if (DPIsTitle(title, @"New Group with Tab") || DPIsTitle(title, @"New Group with Tabs")) return YES;
     return [title hasPrefix:@"New Group with "] && ([title hasSuffix:@" Tab"] || [title hasSuffix:@" Tabs"]);
 }
 
@@ -119,12 +119,12 @@ static void DPInstallMenuBarItem(void) {
     NSMenu *tabMenu = nil, *commandMenu = nil, *windowMenu = nil, *fileMenu = nil;
     for (NSMenuItem *top in NSApp.mainMenu.itemArray) {
         NSString *title = top.title ?: @"";
-        if ([title isEqualToString:@"Tab"] || [title isEqualToString:@"Tabs"]) tabMenu = top.submenu;
-        if ([title isEqualToString:@"Window"]) windowMenu = top.submenu;
-        if ([title isEqualToString:@"File"]) fileMenu = top.submenu;
+        if (DPIsTitle(title, @"Tab") || DPIsTitle(title, @"Tabs")) tabMenu = top.submenu;
+        if (DPIsTitle(title, @"Window")) windowMenu = top.submenu;
+        if (DPIsTitle(title, @"File")) fileMenu = top.submenu;
         for (NSMenuItem *item in top.submenu.itemArray)
-            if (DPIsNewGroupTitle(item.title) || [item.title isEqualToString:@"New Tab"] || [item.title isEqualToString:@"Close Tab"]
-                || [item.title isEqualToString:@"Select Next Tab"] || [item.title isEqualToString:@"Reopen Closed Tab"])
+            if (DPIsNewGroupTitle(item.title) || DPIsTitle(item.title, @"New Tab") || DPIsTitle(item.title, @"Close Tab")
+                || DPIsTitle(item.title, @"Select Next Tab") || DPIsTitle(item.title, @"Reopen Closed Tab"))
                 commandMenu = top.submenu;
     }
     NSMenu *menu = tabMenu ?: commandMenu ?: windowMenu ?: fileMenu;
@@ -135,7 +135,7 @@ static void DPInstallMenuBarItem(void) {
     NSInteger index = menu.numberOfItems;
     for (NSInteger i = 0; i < menu.numberOfItems; i++) {
         NSString *title = [menu itemAtIndex:i].title;
-        if (DPIsNewGroupTitle(title) || [title isEqualToString:@"New Tab"]) index = i + 1;
+        if (DPIsNewGroupTitle(title) || DPIsTitle(title, @"New Tab")) index = i + 1;
     }
     DPInserting = YES;
     [menu insertItem:DPGroupMenuItem() atIndex:MIN(index, menu.numberOfItems)];

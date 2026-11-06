@@ -27,10 +27,22 @@ static id DPFrontPage(void) {
 
 static void DPSaveFrontPage(void) { [DPFrontPage() performSelector:@selector(save)]; }
 
+static NSMenu *DPFileMenu(void) {
+    for (NSMenuItem *item in NSApp.mainMenu.itemArray)
+        if (DPIsTitle(item.title, @"File")) return item.submenu;
+    return nil;
+}
+
+static NSInteger DPIndexOfTitle(NSMenu *menu, NSString *title) {
+    for (NSInteger i = 0; i < menu.numberOfItems; i++)
+        if (DPIsTitle([menu itemAtIndex:i].title, title)) return i;
+    return -1;
+}
+
 static void DPAddSaveItem(void) {
-    NSMenu *file = [NSApp.mainMenu itemWithTitle:@"File"].submenu;
+    NSMenu *file = DPFileMenu();
     if (!file || [file indexOfItem:DPSaveItem] >= 0) return;
-    NSInteger print = [file indexOfItemWithTitle:@"Print…"];
+    NSInteger print = DPIndexOfTitle(file, @"Print…");
     [file insertItem:DPSaveItem atIndex:print >= 0 ? print : file.numberOfItems];
 }
 
@@ -53,7 +65,7 @@ static void DPApplySavePageAs(DPPatch *patch) {
 }
 
 static NSString *DPVerifySavePageAs(DPPatch *patch) {
-    NSMenu *file = [NSApp.mainMenu itemWithTitle:@"File"].submenu;
+    NSMenu *file = DPFileMenu();
     BOOL shown = file && [file indexOfItem:DPSaveItem] >= 0 && !DPSaveItem.hidden;
     if (shown == patch->on) return nil;
     return patch->on ? @"the File menu has no Save Page As" : @"Save Page As stays in the File menu";

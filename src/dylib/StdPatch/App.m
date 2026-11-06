@@ -19,9 +19,20 @@ void DPOnQuit(void (^block)(void)) {
 - (void)run:(id)sender { self.action(); }
 @end
 
+BOOL DPIsTitle(NSString *title, NSString *english) {
+    if ([title isEqualToString:english]) return YES;
+    NSString *translated = DPTranslatedTitle ? DPTranslatedTitle(english) : nil;
+    return translated != nil && [title isEqualToString:translated];
+}
+
 static NSMenu *DPMenuTitled(NSString *title) {
     NSMenu *bar = NSApp.mainMenu;
-    return (title ? [bar itemWithTitle:title] : bar.itemArray.firstObject).submenu;
+    NSMenuItem *item = title ? [bar itemWithTitle:title] : bar.itemArray.firstObject;
+    if (!item && title && DPTranslatedTitle) {
+        NSString *translated = DPTranslatedTitle(title);
+        if (translated) item = [bar itemWithTitle:translated];
+    }
+    return item.submenu;
 }
 
 static void DPSetAction(NSMenuItem *item, void (^action)(void)) {
@@ -45,6 +56,7 @@ NSMenuItem *DPAddMenuItem(NSString *menu, NSString *title, void (^action)(void))
 }
 
 void DPOnMenuItem(NSString *menu, NSString *titlePrefix, void (^action)(void)) {
+    NSString *translated = DPTranslatedTitle ? DPTranslatedTitle(titlePrefix) : nil;
     for (NSMenuItem *item in DPMenuTitled(menu).itemArray)
-        if ([item.title hasPrefix:titlePrefix]) DPSetAction(item, action);
+        if ([item.title hasPrefix:titlePrefix] || (translated && [item.title hasPrefix:translated])) DPSetAction(item, action);
 }

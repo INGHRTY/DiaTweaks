@@ -7,7 +7,7 @@ static BOOL DPJustClosed;
 static NSMenuItem *DPReopenItem(void) {
     for (NSMenuItem *top in NSApp.mainMenu.itemArray)
         for (NSMenuItem *item in top.submenu.itemArray)
-            if ([item.title isEqualToString:@"Reopen Closed Tab"]) return item;
+            if (DPIsTitle(item.title, @"Reopen Closed Tab")) return item;
     return nil;
 }
 

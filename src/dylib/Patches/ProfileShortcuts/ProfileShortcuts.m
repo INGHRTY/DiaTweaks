@@ -71,7 +71,7 @@ static void DPInstallProfileShortcuts(void) {
 }
 
 static NSString *DPVerifyProfileShortcuts(DPPatch *patch) {
-    NSMenuItem *item = DPFindItem(NSApp.mainMenu, ^BOOL(NSMenuItem *candidate) { return [candidate.title isEqualToString:@"Go to Sidebar Item 1"]; });
+    NSMenuItem *item = DPFindItem(NSApp.mainMenu, ^BOOL(NSMenuItem *candidate) { return DPIsTitle(candidate.title, @"Go to Sidebar Item 1"); });
     if (!item || DPIsDigitShortcut(item, patch->on ? NSEventModifierFlagControl : NSEventModifierFlagCommand)) return nil;
     return patch->on ? @"the sidebar items keep ⌘ and a number" : @"the sidebar items didn't get ⌘ back";
 }
