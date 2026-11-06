@@ -2,17 +2,25 @@
 #import <dlfcn.h>
 
 NSHashTable<NSView *> *DPHideHosts, *DPSuppressed;
-static char DPHiderKey;
+static char DPHidersKey;
 
+// Every patch that hides the view. Only a match is remembered: some views only match once Dia labels them.
+static NSArray<NSValue *> *DPHiders(NSView *view) {
+    NSArray<NSValue *> *cached = DPGet(view, &DPHidersKey);
+    if (cached) return cached;
+    NSMutableArray<NSValue *> *hiders = [NSMutableArray array];
+    for (NSUInteger i = 0; i < DPPatchCount; i++)
+        if (DPPatches[i]->hides && !DPPatches[i]->unavailable && DPPatches[i]->hides(view)) [hiders addObject:[NSValue valueWithPointer:DPPatches[i]]];
+    if (hiders.count) DPSet(view, &DPHidersKey, hiders);
+    return hiders;
+}
+
+// One that's on, else the first that would hide it.
 DPPatch *DPHider(NSView *view) {
-    NSValue *cached = DPGet(view, &DPHiderKey);
-    if (cached) return cached.pointerValue;
-    for (NSUInteger i = 0; i < DPPatchCount; i++) {
-        if (!DPPatches[i]->hides || DPPatches[i]->unavailable || !DPPatches[i]->hides(view)) continue;
-        DPSet(view, &DPHiderKey, [NSValue valueWithPointer:DPPatches[i]]);
-        return DPPatches[i];
-    }
-    return NULL;
+    NSArray<NSValue *> *hiders = DPHiders(view);
+    for (NSValue *hider in hiders)
+        if (((DPPatch *)hider.pointerValue)->on) return hider.pointerValue;
+    return hiders.firstObject.pointerValue;
 }
 
 // Dia shows these views again itself, so refuse while the patch is on.
@@ -59,16 +67,16 @@ void DPEnforceHides(NSView *root) {
 
 void DPApplyHides(DPPatch *patch) {
     if (patch->on) for (NSView *host in DPHideHosts.allObjects) DPEnforceHides(host);
-    else for (NSView *view in DPSuppressed.allObjects) if (DPHider(view) == patch) view.hidden = NO;
+    else for (NSView *view in DPSuppressed.allObjects) if (!DPHider(view)->on) view.hidden = NO;
     DPRelayoutViews(DPHideHosts);
 }
 
 static NSString *DPProblem(NSView *view, DPPatch *patch) {
     DPPatch *owner = DPHider(view);
     if (owner) {
-        if (owner != patch) return nil;
+        if (![DPHiders(view) containsObject:[NSValue valueWithPointer:patch]]) return nil;
         if (patch->on && !view.hiddenOrHasHiddenAncestor) return @"button still shows";
-        return !patch->on && [DPSuppressed containsObject:view] ? @"button still hidden" : nil;
+        return !owner->on && [DPSuppressed containsObject:view] ? @"button still hidden" : nil;
     }
     for (NSView *sub in view.subviews) {
         NSString *problem = DPProblem(sub, patch);
