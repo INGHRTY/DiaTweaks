@@ -3,7 +3,7 @@
 extern DPPatch DPCollapsePinned;
 
 static NSString *const DPCollapsedKey = @"collapsedPinned";  // The profiles folded, by space ID.
-static const CGFloat DPHeaderHeight = 28, DPRowInset = 15, DPTitleInset = 36, DPChevronInset = 11, DPGap = 8;
+static const CGFloat DPRowHeight = 37, DPHeaderHeight = 28, DPRowInset = 15, DPTitleInset = 36, DPChevronInset = 11, DPGap = 8;
 static NSUserDefaults *DPCollapseDefaults;
 static BOOL DPRaw;  // While measuring, the layout answers as Dia laid it out.
 static char DPHeaderKey;
@@ -19,8 +19,9 @@ static BOOL DPIsCollapsed(NSString *space) { return space && [[DPCollapseDefault
 @interface DPPinnedHeader : NSView
 @property (nonatomic, copy) NSString *space;
 @property (nonatomic) BOOL shown, collapsed, hovered, folding;
+@property (nonatomic, strong) NSDate *springSince;
 @property (nonatomic) NSInteger rows;    // Pinned rows, above Dia's line.
-@property (nonatomic) CGFloat top, end;  // Where Dia puts the first of them, and the line.
+@property (nonatomic) CGFloat top, end, below;  // Where Dia puts the first of them, its line, and what follows the line.
 @property (nonatomic, strong) NSImageView *pin, *chevron;
 @property (nonatomic, strong) NSTextField *title;
 @property (nonatomic, strong) CALayer *line;
@@ -132,6 +133,7 @@ static void DPMeasure(NSCollectionViewLayout *layout) {
     header.rows = rows;
     header.top = NSMinY(first);
     header.end = NSMinY(line);
+    header.below = NSMaxY(line);
     header.frame = NSMakeRect(0, header.top, NSWidth(list.bounds), DPHeaderHeight);
     header.needsLayout = YES;
 }
@@ -202,15 +204,19 @@ static NSView *DPList_hitTest(NSView *self, SEL _cmd, NSPoint point) {
 
 #pragma mark Dragging
 
-// Dia works out where a dragged tab lands from its own layout, so the pointer is moved back to where Dia put that spot.
-// Over the header, that's the top of the pinned rows, or when they're folded, the line below them.
-static NSPoint DPDiaPoint(NSCollectionView *list, NSPoint inWindow) {
+// Dia works out where a dragged tab lands from its own layout, so the pointer is moved back to where Dia put that spot;
+// over the header, that's the top of the pinned rows. Dia pins a tab dropped above the middle of the first tab after its
+// line, so while they're folded that band and the header take no drops: nothing gets pinned out of sight.
+static BOOL DPDiaPoint(NSCollectionView *list, NSPoint *inWindow) {
     DPPinnedHeader *header = DPGet(list, &DPHeaderKey);
-    if (!header.shown || header.hidden) return inWindow;
-    NSPoint point = [list convertPoint:inWindow fromView:nil];
-    if (point.y >= header.top + DPHeaderHeight) point.y -= DPShift(header, NO);
-    else if (point.y >= header.top) point.y = header.collapsed ? header.end : header.top;
-    return [list convertPoint:point toView:nil];
+    if (!header.shown || header.hidden) return YES;
+    NSPoint point = [list convertPoint:*inWindow fromView:nil];
+    BOOL onHeader = point.y >= header.top && point.y < header.top + DPHeaderHeight;
+    if (onHeader && !header.collapsed) point.y = header.top;
+    else if (point.y >= header.top) point.y -= DPShift(header, NO);
+    if (header.collapsed && (onHeader || (point.y >= header.end && point.y < header.below + DPRowHeight / 2))) return NO;
+    *inWindow = [list convertPoint:point toView:nil];
+    return YES;
 }
 
 @interface DPDiaDrag : NSProxy
@@ -227,9 +233,15 @@ static NSPoint DPDiaPoint(NSCollectionView *list, NSPoint inWindow) {
 - (BOOL)isKindOfClass:(Class)cls { return [(NSObject *)self.info isKindOfClass:cls]; }
 @end
 
+static NSCollectionView *DPListIn(NSView *tabList) {
+    return (NSCollectionView *)DPFindView(tabList, ^BOOL(NSView *view) { return DPIsKind(view, DPDiaTabListCollection); });
+}
+
+// nil where a drop is refused.
 static id<NSDraggingInfo> DPDiaDragOf(NSView *tabList, id<NSDraggingInfo> info) {
-    NSCollectionView *list = (NSCollectionView *)DPFindView(tabList, ^BOOL(NSView *view) { return DPIsKind(view, DPDiaTabListCollection); });
-    NSPoint location = list ? DPDiaPoint(list, info.draggingLocation) : info.draggingLocation;
+    NSCollectionView *list = DPListIn(tabList);
+    NSPoint location = info.draggingLocation;
+    if (list && !DPDiaPoint(list, &location)) return nil;
     if (NSEqualPoints(location, info.draggingLocation)) return info;
     DPDiaDrag *drag = [DPDiaDrag alloc];
     drag.info = info;
@@ -237,20 +249,50 @@ static id<NSDraggingInfo> DPDiaDragOf(NSView *tabList, id<NSDraggingInfo> info) 
     return (id<NSDraggingInfo>)drag;
 }
 
-static NSDragOperation DPTabList_entered(NSView *self, SEL _cmd, id<NSDraggingInfo> info) {
-    return DPCallOriginal(DPTabList_entered, self, DPDiaDragOf(self, info));
+// Holding a tab over the folded header unfolds it, like a folder in Finder.
+static void DPSpringOpen(NSView *tabList, id<NSDraggingInfo> info) {
+    NSCollectionView *list = DPListIn(tabList);
+    DPPinnedHeader *header = DPGet(list, &DPHeaderKey);
+    NSPoint point = [list convertPoint:info.draggingLocation fromView:nil];
+    BOOL over = header.shown && header.collapsed && point.y >= header.top && point.y < header.top + DPHeaderHeight;
+    if (!over) header.springSince = nil;
+    else if (!header.springSince) header.springSince = NSDate.date;
+    else if (-header.springSince.timeIntervalSinceNow > 0.6) {
+        header.springSince = nil;
+        DPFold(header.space, NO);
+    }
 }
 
+static char DPRefusedKey;
+
+static NSDragOperation DPTabList_entered(NSView *self, SEL _cmd, id<NSDraggingInfo> info) {
+    id<NSDraggingInfo> dia = DPDiaDragOf(self, info);
+    DPSet(self, &DPRefusedKey, dia ? nil : @YES);
+    return dia ? DPCallOriginal(DPTabList_entered, self, dia) : NSDragOperationNone;
+}
+
+// Into a refused band Dia is told the pointer left, so it takes back the gap it opened; out of one, that it came back.
 static NSDragOperation DPTabList_updated(NSView *self, SEL _cmd, id<NSDraggingInfo> info) {
-    return DPCallOriginal(DPTabList_updated, self, DPDiaDragOf(self, info));
+    DPSpringOpen(self, info);
+    id<NSDraggingInfo> dia = DPDiaDragOf(self, info);
+    BOOL refused = [DPGet(self, &DPRefusedKey) boolValue];
+    if (!dia) {
+        if (!refused) [(id<NSDraggingDestination>)self draggingExited:info];
+        DPSet(self, &DPRefusedKey, @YES);
+        return NSDragOperationNone;
+    }
+    if (refused) return [(id<NSDraggingDestination>)self draggingEntered:info];
+    return DPCallOriginal(DPTabList_updated, self, dia);
 }
 
 static BOOL DPTabList_prepare(NSView *self, SEL _cmd, id<NSDraggingInfo> info) {
-    return DPCallOriginal(DPTabList_prepare, self, DPDiaDragOf(self, info));
+    id<NSDraggingInfo> dia = DPDiaDragOf(self, info);
+    return dia && DPCallOriginal(DPTabList_prepare, self, dia);
 }
 
 static BOOL DPTabList_perform(NSView *self, SEL _cmd, id<NSDraggingInfo> info) {
-    return DPCallOriginal(DPTabList_perform, self, DPDiaDragOf(self, info));
+    id<NSDraggingInfo> dia = DPDiaDragOf(self, info);
+    return dia && DPCallOriginal(DPTabList_perform, self, dia);
 }
 
 static NSArray<NSCollectionView *> *DPListsOf(NSString *space) {
