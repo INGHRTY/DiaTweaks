@@ -115,3 +115,8 @@ void DPOnQuit(void (^block)(void));
 NSMenuItem *DPMenuItem(NSString *title, void (^action)(void));
 NSMenuItem *DPAddMenuItem(NSString *menu, NSString *title, void (^action)(void));
 void DPOnMenuItem(NSString *menu, NSString *titlePrefix, void (^action)(void));
+
+// A patch may translate Dia's interface; compare titles by their English name either way. DPTranslatedTitle is nil
+// unless such a patch is built in.
+extern NSString *DPTranslatedTitle(NSString *english) __attribute__((weak_import));
+BOOL DPIsTitle(NSString *title, NSString *english);
