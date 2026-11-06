@@ -293,8 +293,23 @@ NSDictionary<NSString *, NSString *> *DPChineseStrings(void) {
 
             // Tweak titles
             @"Answer with Your Own Model" : @"用自己的模型回答",
-            @"Dia answers with the Claude Code it ships. Point that at your own Anthropic-compatible model endpoint instead of Dia's servers. Dia starts a new agent the next time you chat." :
-                @"Dia 用自带的 Claude Code 回答。把它的模型地址指向你自己的 Anthropic 兼容接口，不再经过 Dia 的服务器。Dia 会在你下次对话时启动新的 agent。",
+            @"Dia answers with the Claude Code it ships. Point that at your own Anthropic-compatible endpoint instead of Dia's servers, and pick the model and how hard it thinks." :
+                @"Dia 用自带的 Claude Code 回答。把它指向你自己的 Anthropic 兼容接口，不再经过 Dia 的服务器，并选择使用哪个模型、思考强度多高。",
+            @"Skip the Approval Prompt" : @"跳过授权弹窗",
+            @"Before the assistant clicks, types or downloads anything, Dia asks you to allow it. This answers those questions for you, so the assistant does what you asked without stopping to ask." :
+                @"Dia 的助手每次要点按钮、输入文字或下载文件，都会弹窗问你允不允许。打开后这些询问自动放行，助手直接做你要它做的事。",
+            // The Own Model page
+            @"Endpoint" : @"接口地址",
+            @"Provider" : @"供应商",
+            @"Model" : @"模型",
+            @"Thinking" : @"思考强度",
+            @"Dia’s default" : @"跟随 Dia",
+            @"Off" : @"不思考",
+            @"Low" : @"低",
+            @"Medium" : @"中",
+            @"High" : @"高",
+            @"Extra high" : @"更高",
+            @"Max" : @"最高",
             @"Chinese Interface" : @"中文界面",
             @"Translate Dia and its browser interface into Chinese. The command bar, web pages and text fields are left alone; Chromium's own pages switch after Dia restarts." :
                 @"把 Dia 及其浏览器界面的文字换成中文。命令栏、网页内容和输入框不受影响；Chromium 自带的页面在重启 Dia 后生效。",
