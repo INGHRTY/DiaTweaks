@@ -79,7 +79,7 @@ static BOOL DPWriteOwnModelProfile(void) {
     return [wanted writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
-static BOOL DPIsAgentServer(const char *path) {
+BOOL DPIsAgentServer(const char *path) {
     return path && strstr(path, "/agent-server-resources/dist/agent-server") != NULL;
 }
 
@@ -97,7 +97,7 @@ static void DPOwnModelSpawn(DPSpawn *spawn) {
     });
 }
 
-static pid_t DPAgentServerPID(void) {
+pid_t DPAgentServerPID(void) {
     int count = proc_listchildpids(getpid(), NULL, 0);
     if (count <= 0) return 0;
     pid_t pids[count];
@@ -109,7 +109,7 @@ static pid_t DPAgentServerPID(void) {
     return 0;
 }
 
-static NSDictionary<NSString *, NSString *> *DPProcessEnvironment(pid_t pid) {
+NSDictionary<NSString *, NSString *> *DPAgentServerEnvironment(pid_t pid) {
     int mib[] = {CTL_KERN, KERN_PROCARGS2, pid};
     size_t size = 0;
     if (sysctl(mib, 3, NULL, &size, NULL, 0) || size < sizeof(int)) return nil;
@@ -133,7 +133,7 @@ static NSDictionary<NSString *, NSString *> *DPProcessEnvironment(pid_t pid) {
 
 // The agent server reads its environment once, at launch, so a change to these needs it to start again. Dia starts
 // another one the next time a chat needs it.
-static void DPRestartAgentServer(void) {
+void DPRestartAgentServer(void) {
     pid_t pid = DPAgentServerPID();
     if (pid) kill(pid, SIGTERM);
 }
@@ -148,7 +148,7 @@ static void DPApplyOwnModel(DPPatch *patch) {
 static NSString *DPVerifyOwnModel(DPPatch *patch) {
     pid_t pid = DPAgentServerPID();
     if (!pid) return nil;
-    BOOL ours = [DPProcessEnvironment(pid)[@"ANTHROPIC_BASE_URL"] isEqualToString:DPOwnModelBase()];
+    BOOL ours = [DPAgentServerEnvironment(pid)[@"ANTHROPIC_BASE_URL"] isEqualToString:DPOwnModelBase()];
     if (ours == patch->on) return nil;
     return patch->on ? @"the agent server still answers with Dia's models" : @"the agent server still answers with your model";
 }
