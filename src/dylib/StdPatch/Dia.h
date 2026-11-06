@@ -63,6 +63,8 @@
 #define DPDiaDownloadsButton    "_TtC10TabSurface19DownloadsButtonView"
 #define DPDiaTabSurfaceButton   "_TtC10TabSurface16TabSurfaceButton"
 #define DPDiaCapabilityButton   "_TtC23AssistantCapabilitiesUI36AssistantCapabilitiesToolbarItemView"
+#define DPDiaAdvancedChatUpsell "_TtC13NavigationBar24AdvancedChatUpsellButton"
+#define DPDiaAdvancedChatUpsellControl "_TtC13NavigationBar31AdvancedChatUpsellButtonControl"
 #define DPDiaPersonalizeButton  "_TtC22AssistantPersonalityUI17PersonalizeButton"
 #define DPDiaNewTabLogo         "_TtC15Personalization13DiaIconButton"
 #define DPDiaNewTabLogoParticles "_TtC7PowerUp16LogoParticleView"
