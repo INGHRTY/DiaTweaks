@@ -71,6 +71,17 @@ IMP DPOriginalIMP(id object, SEL sel, IMP replacement);
 #define DPCallOriginal(hook, self, ...) \
     ((__typeof__(&hook))DPOriginalIMP(self, _cmd, (IMP)hook))(self, _cmd, ##__VA_ARGS__)
 
+#pragma mark Spawning
+
+// A patch that needs to change how Dia starts a helper process registers a rewrite from install. It runs for every
+// spawn: `path` is the executable, `argv` and `env` are what posix_spawn gets, and both may be changed in place.
+typedef struct { const char *path; char **argv, **env; } DPSpawn;
+typedef void (*DPSpawnRewrite)(DPSpawn *spawn);
+void DPOnSpawn(DPSpawnRewrite rewrite);
+
+// A copy of `env` with `values` on top; a nil value removes the key. Never freed, so register at most a few per launch.
+char **DPEnvBySetting(char *const env[], NSDictionary<NSString *, NSString *> *values);
+
 #pragma mark Views
 
 NSView *DPFindView(NSView *root, BOOL (^match)(NSView *view));  // Root included.

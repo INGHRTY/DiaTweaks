@@ -13,20 +13,14 @@ static const char *DPDiapatch(void) {
     return path;
 }
 
-static int DPSpawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *files, const posix_spawnattr_t *attrs, char *const argv[], char *const envp[]) {
-    const char *name = path ? strrchr(path, '/') : NULL;
-    if (!DPOnePassword.on || !name || strcmp(name, "/1Password-BrowserSupport")) return posix_spawn(pid, path, files, attrs, argv, envp);
-    int argc = 0;
-    while (argv[argc]) argc++;
-    char *redirected[argc + 1];
-    memcpy(redirected, argv, (argc + 1) * sizeof *argv);
-    redirected[0] = (char *)DPDiapatch();
-    return posix_spawn(pid, redirected[0], files, attrs, redirected, envp);
+static void DPRedirectSpawn(DPSpawn *spawn) {
+    const char *name = spawn->path ? strrchr(spawn->path, '/') : NULL;
+    if (!DPOnePassword.on || !name || strcmp(name, "/1Password-BrowserSupport")) return;
+    spawn->path = DPDiapatch();
+    spawn->argv[0] = (char *)spawn->path;
 }
 
-__attribute__((used, section("__DATA,__interpose"))) static const struct { const void *replacement, *replacee; } DPInterposeSpawn = {
-    (const void *)DPSpawn, (const void *)posix_spawn
-};
+static void DPInstallOnePassword(void) { DPOnSpawn(DPRedirectSpawn); }
 
 static NSString *DPAgentPlist(void) { return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents/com.diapatches.passwords.plist"]; }
 
@@ -75,6 +69,7 @@ DP_PATCH(DPOnePassword) {
     .symbol = @"lock.shield.fill",
     .tint = @"systemGreenColor",
     .section = @"Passwords",
+    .install = DPInstallOnePassword,
     .apply = DPApplyOnePassword,
     .ready = DPOnePasswordProblem,
 };
